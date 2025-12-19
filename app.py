@@ -3,8 +3,8 @@ import librosa
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from collections import Counter
 from datetime import datetime
+import io
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Ricardo_DJ228 | Studio Edition", page_icon="🪵", layout="wide")
@@ -23,9 +23,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- MAPPING CAMELOT PRO & ANHARMONIQUE (CORRIGÉ : B = 1B) ---
+# --- MAPPING CAMELOT PRO & ANHARMONIQUE ---
 BASE_CAMELOT = {
-    'B': '1', 'Cb': '1',   # 1B pour Major, 10A pour Minor (géré par la fonction)
+    'B': '1', 'Cb': '1',
     'F#': '2', 'Gb': '2',
     'Db': '3', 'C#': '3', 
     'Ab': '4', 'G#': '4', 
@@ -40,10 +40,8 @@ BASE_CAMELOT = {
 }
 
 def get_camelot_pro(key, mode):
-    # Correction spécifique pour B Minor qui est 10A alors que B Major est 1B
     if key == 'B' and mode in ['minor', 'dorian']:
         return "10A"
-    
     number = BASE_CAMELOT.get(key, "1")
     letter = "A" if mode in ['minor', 'dorian'] else "B"
     return f"{number}{letter}"
@@ -73,68 +71,84 @@ def analyze_segment(y, sr):
 
 # --- INTERFACE PRINCIPALE ---
 st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER V2</h1>", unsafe_allow_html=True)
-file = st.file_uploader("Importer votre audio (Amapiano, House, etc.)", type=['mp3', 'wav', 'flac'])
 
-if file:
-    with st.spinner("Analyse spectrale en cours..."):
-        y_full, sr = librosa.load(file)
-        duration = librosa.get_duration(y=y_full, sr=sr)
-        tempo, _ = librosa.beat.beat_track(y=y_full, sr=sr)
-        
-        timeline_data = []
-        for start_t in range(0, int(duration), 30):
-            start_sample = start_t * sr
-            end_sample = min((start_t + 30) * sr, len(y_full))
-            res = analyze_segment(y_full[start_sample:end_sample], sr)
-            if res:
-                timeline_data.append({"Secondes": start_t, "Note": res['key'], "Mode": res['mode']})
+files = st.file_uploader("Importer vos audios (Amapiano, House, etc.)", type=['mp3', 'wav', 'flac'], accept_multiple_files=True)
 
-        df_tl = pd.DataFrame(timeline_data)
-        if not df_tl.empty:
-            final_res = df_tl.groupby(['Note', 'Mode']).size().idxmax()
-            f_key, f_mode = final_res
-            f_camelot = get_camelot_pro(f_key, f_mode)
-            
-            # Sauvegarde dans l'historique
-            analysis_time = datetime.now().strftime("%H:%M:%S")
-            st.session_state.history.insert(0, {
-                "Heure": analysis_time,
-                "Nom": file.name,
-                "Cle": f"{f_key} {f_mode.upper()}",
-                "Camelot": f_camelot,
-                "BPM": int(tempo)
-            })
+if files:
+    for file in files:
+        with st.expander(f"🎵 Analyse de : {file.name}", expanded=True):
+            with st.spinner(f"Traitement de {file.name}..."):
+                y_full, sr = librosa.load(file)
+                duration = librosa.get_duration(y=y_full, sr=sr)
+                tempo, _ = librosa.beat.beat_track(y=y_full, sr=sr)
+                
+                timeline_data = []
+                for start_t in range(0, int(duration), 30):
+                    start_sample = start_t * sr
+                    end_sample = min((start_t + 30) * sr, len(y_full))
+                    res = analyze_segment(y_full[start_sample:end_sample], sr)
+                    if res:
+                        timeline_data.append({"Secondes": start_t, "Note": res['key'], "Mode": res['mode']})
 
-            # --- AFFICHAGE RESULTATS ---
-            st.markdown("<br>", unsafe_allow_html=True)
-            c1, c2, c3 = st.columns(3)
-            c1.metric("CLÉ DÉTECTÉE", f"{f_key} {f_mode.upper()}")
-            c2.metric("NOTATION CAMELOT", f_camelot)
-            c3.metric("TEMPO ESTIMÉ", f"{int(tempo)} BPM")
+                df_tl = pd.DataFrame(timeline_data)
+                if not df_tl.empty:
+                    final_res = df_tl.groupby(['Note', 'Mode']).size().idxmax()
+                    f_key, f_mode = final_res
+                    f_camelot = get_camelot_pro(f_key, f_mode)
+                    
+                    analysis_time = datetime.now().strftime("%H:%M:%S")
+                    st.session_state.history.insert(0, {
+                        "Heure": analysis_time,
+                        "Nom": file.name,
+                        "Cle": f"{f_key} {f_mode.upper()}",
+                        "Camelot": f_camelot,
+                        "BPM": int(float(tempo))
+                    })
 
-            # --- VERIFICATION A L'OREILLE ---
-            st.divider()
-            st.subheader("🔊 Vérification auditive")
-            v1, v2 = st.columns(2)
-            with v1:
-                st.audio(file)
-            with v2:
-                freqs = {'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88}
-                target_freq = freqs.get(f_key, 440.0)
-                t = np.linspace(0, 3.0, int(22050 * 3.0), False)
-                tone = 0.4 * np.sin(2 * np.pi * target_freq * t) + 0.2 * np.sin(2 * np.pi * (target_freq * 2) * t)
-                st.audio(tone, sample_rate=22050)
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("CLÉ DÉTECTÉE", f"{f_key} {f_mode.upper()}")
+                    c2.metric("NOTATION CAMELOT", f_camelot)
+                    c3.metric("TEMPO ESTIMÉ", f"{int(float(tempo))} BPM")
 
-            # --- TIMELINE ---
-            st.divider()
-            st.subheader("📈 Timeline des changements")
-            fig = px.line(df_tl, x="Secondes", y="Note", color="Mode", markers=True, category_orders={"Note": NOTES})
-            st.plotly_chart(fig, use_container_width=True)
+                    v1, v2 = st.columns(2)
+                    with v1:
+                        st.audio(file)
+                    with v2:
+                        freqs = {'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88}
+                        target_freq = freqs.get(f_key, 440.0)
+                        t = np.linspace(0, 3.0, int(22050 * 3.0), False)
+                        tone = 0.4 * np.sin(2 * np.pi * target_freq * t) + 0.2 * np.sin(2 * np.pi * (target_freq * 2) * t)
+                        st.audio(tone, sample_rate=22050)
+
+                    fig = px.line(df_tl, x="Secondes", y="Note", color="Mode", markers=True, 
+                                 category_orders={"Note": NOTES}, title=f"Évolution harmonique - {file.name}")
+                    st.plotly_chart(fig, use_container_width=True)
 
 # --- SECTION HISTORIQUE ---
 st.divider()
 st.subheader("📜 Historique des analyses")
+
 if st.session_state.history:
+    # Boutons d'action pour l'historique
+    ha1, ha2 = st.columns([1, 5])
+    
+    with ha1:
+        # Création du CSV pour téléchargement
+        df_history = pd.DataFrame(st.session_state.history)
+        csv = df_history.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger CSV",
+            data=csv,
+            file_name=f"Analyse_Ricardo_DJ228_{datetime.now().strftime('%d%m%Y')}.csv",
+            mime='text/csv',
+        )
+    
+    with ha2:
+        if st.button("🗑️ Effacer l'historique"):
+            st.session_state.history = []
+            st.rerun()
+
+    # Affichage des cartes d'historique
     for item in st.session_state.history:
         st.markdown(f"""
         <div class="history-card">
@@ -142,6 +156,3 @@ if st.session_state.history:
             <b>{item['Cle']}</b> ({item['Camelot']}) | {item['BPM']} BPM
         </div>
         """, unsafe_allow_html=True)
-    if st.button("Effacer l'historique"):
-        st.session_state.history = []
-        st.rerun()
