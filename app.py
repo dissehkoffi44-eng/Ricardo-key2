@@ -59,7 +59,7 @@ def analyze_segment(y, sr):
     return {"key": res_key, "mode": res_mode}
 
 # --- INTERFACE PRINCIPALE ---
-st.markdown("<h1>RICARDO_DJ228 PRO ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>RICARDO_DJ228 V2 PRO ANALYZER</h1>", unsafe_allow_html=True)
 file = st.file_uploader("Importer votre audio (Amapiano, House, etc.)", type=['mp3', 'wav', 'flac'])
 
 if file:
