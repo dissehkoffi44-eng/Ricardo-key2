@@ -6,11 +6,13 @@ import plotly.express as px
 from collections import Counter
 import queue
 import time
+from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Ricardo_DJ228 | Precision V4.5 Pro", page_icon="🎧", layout="wide")
 
+# Initialisation de l'historique si inexistant
 if 'history' not in st.session_state:
     st.session_state.history = []
 
@@ -40,7 +42,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- MAPPING CAMELOT ---
-# F# MINOR = 11A (Info sauvegardée)
+# Configuration personnalisée : F# MINOR = 11A
 BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
 BASE_CAMELOT_MAJOR = {'B':'1B','F#':'2B','Gb':'2B','Db':'3B','C#':'3B','Ab':'4B','G#':'4B','Eb':'5B','D#':'5B','Bb':'6B','A#':'6B','F':'7B','C':'8B','G':'9B','D':'10B','A':'11B','E':'12B'}
 
@@ -116,7 +118,7 @@ def get_full_analysis(file_buffer):
         "mode": mode_label, "is_aligned": is_aligned
     }
 
-# --- CLASSE LIVE (SCANNER RADIO) ---
+# --- CLASSE LIVE ---
 class RealTimeAudioProcessor(AudioProcessorBase):
     def __init__(self):
         self.result_queue = queue.Queue()
@@ -124,11 +126,9 @@ class RealTimeAudioProcessor(AudioProcessorBase):
         self.profile = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 
     def recv_audio(self, frame):
-        # Conversion audio
         audio_data = frame.to_ndarray().flatten().astype(np.float32) / 32768.0
         sr = frame.sample_rate
         try:
-            # Analyse Chroma
             chroma = librosa.feature.chroma_stft(y=audio_data, sr=sr, n_chroma=12)
             chroma_avg = np.mean(chroma, axis=1)
             best_score, res_key = -1, ""
@@ -136,46 +136,55 @@ class RealTimeAudioProcessor(AudioProcessorBase):
                 score = np.corrcoef(chroma_avg, np.roll(self.profile, i))[0, 1]
                 if score > best_score:
                     best_score, res_key = score, f"{self.notes[i]} minor"
-            # Envoi du résultat dans la file
             self.result_queue.put({"key": res_key, "conf": int(best_score * 100)})
         except: pass
         return frame
 
 # --- INTERFACE PRINCIPALE ---
 st.markdown("<h1 style='text-align: center; color: #1A1A1A;'>🎧 RICARDO_DJ228 | V4.5 PRO</h1>", unsafe_allow_html=True)
-tabs = st.tabs(["📁 ANALYSE DE FICHIER", "📻 SCANNER RADIO LIVE"])
+tabs = st.tabs(["📁 ANALYSE DE FICHIER", "📻 SCANNER RADIO LIVE", "🕒 HISTORIQUE GLOBAL"])
 
-# --- ONGLET 1 : ANALYSE FICHIER ---
+# --- ONGLET 1 : ANALYSE FICHIERS (MULTI) ---
 with tabs[0]:
-    file = st.file_uploader("Importer une track (MP3, WAV, FLAC)", type=['mp3', 'wav', 'flac'])
-    if file:
-        res = get_full_analysis(file)
-        conf = res["confidence"]
-        color = "#10B981" if conf >= 95 else "#F59E0B"
-        
-        if res["is_aligned"]:
-            st.markdown(f"""<div class="info-box">✅ <b>Accordage OK :</b> Le Kick est aligné. Analyse directe activée.</div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""<div class="warning-box">🛡️ <b>Discordance détectée :</b> Application des filtres HPSS.</div>""", unsafe_allow_html=True)
+    uploaded_files = st.file_uploader("Importer des tracks (MP3, WAV, FLAC)", type=['mp3', 'wav', 'flac'], accept_multiple_files=True)
+    
+    if uploaded_files:
+        for file in uploaded_files:
+            with st.expander(f"🎵 Analyse : {file.name}", expanded=len(uploaded_files) == 1):
+                res = get_full_analysis(file)
+                conf = res["confidence"]
+                color = "#10B981" if conf >= 95 else "#F59E0B"
+                camelot = get_camelot_pro(res['synthese'])
+                
+                # Sauvegarde automatique dans l'historique
+                entry = {
+                    "Heure": datetime.now().strftime("%H:%M:%S"),
+                    "Fichier": file.name,
+                    "Clef": res['synthese'],
+                    "Camelot": camelot,
+                    "BPM": res['tempo'],
+                    "Fiabilité": f"{conf}%"
+                }
+                if not any(h['Fichier'] == file.name for h in st.session_state.history):
+                    st.session_state.history.insert(0, entry)
 
-        st.markdown(f"**Indice de Fiabilité : {conf}%** ({res['mode']})")
-        st.markdown(f"""<div class="reliability-bar-bg"><div class="reliability-fill" style="width: {conf}%; background-color: {color};">{conf}%</div></div>""", unsafe_allow_html=True)
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f"""<div class="metric-container"><div class="label-custom">DOMINANTE</div><div class="value-custom">{res['vote']}</div><div style="color: {color}; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['vote'])}</div></div>""", unsafe_allow_html=True)
-        with c2:
-            st.markdown(f"""<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE GLOBALE</div><div class="value-custom">{res['synthese']}</div><div style="color: #6366F1; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['synthese'])}</div></div>""", unsafe_allow_html=True)
-        with c3:
-            st.markdown(f"""<div class="metric-container"><div class="label-custom">TEMPO / ENERGY</div><div class="value-custom">{res['tempo']} BPM</div><div style="color: #6366F1; font-weight: 800; font-size: 1.2em;">ENERGY: {res['energy']}/10</div></div>""", unsafe_allow_html=True)
+                if res["is_aligned"]:
+                    st.markdown(f"""<div class="info-box">✅ <b>Accordage OK :</b> Kick aligné pour {file.name}</div>""", unsafe_allow_html=True)
+                
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.markdown(f"""<div class="metric-container"><div class="label-custom">DOMINANTE</div><div class="value-custom">{res['vote']}</div><div style="color: {color}; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['vote'])}</div></div>""", unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"""<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE GLOBALE</div><div class="value-custom">{res['synthese']}</div><div style="color: #6366F1; font-weight: 800; font-size: 1.6em;">{camelot}</div></div>""", unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f"""<div class="metric-container"><div class="label-custom">TEMPO / ENERGY</div><div class="value-custom">{res['tempo']} BPM</div><div style="color: #6366F1; font-weight: 800; font-size: 1.2em;">ENERGY: {res['energy']}/10</div></div>""", unsafe_allow_html=True)
+                
+                st.plotly_chart(px.scatter(pd.DataFrame(res["timeline"]), x="Temps", y="Note", size="Confiance", color="Note", template="plotly_white"), use_container_width=True)
 
-        st.plotly_chart(px.scatter(pd.DataFrame(res["timeline"]), x="Temps", y="Note", size="Confiance", color="Note", template="plotly_white", title="Stabilité Harmonique"), use_container_width=True)
-
-# --- ONGLET 2 : SCANNER RADIO LIVE (CORRIGÉ) ---
+# --- ONGLET 2 : SCANNER RADIO LIVE ---
 with tabs[1]:
     st.markdown("### 📻 Analyseur de Flux Direct")
     col_live, col_res = st.columns([1, 1])
-    
     with col_live:
         webrtc_ctx = webrtc_streamer(
             key="scanner-v45-pro-final",
@@ -185,39 +194,29 @@ with tabs[1]:
             media_stream_constraints={"audio": True, "video": False},
             async_processing=True
         )
-    
     with col_res:
         status_placeholder = st.empty()
-        
         if webrtc_ctx.audio_processor:
-            # Boucle d'affichage pour capturer les éléments de la queue
             while webrtc_ctx.state.playing:
                 try:
-                    # Récupère le dernier résultat avec un timeout court
                     result = webrtc_ctx.audio_processor.result_queue.get(timeout=1.0)
-                    
                     with status_placeholder.container():
                         curr_key = result["key"]
                         curr_conf = result["conf"]
-                        camelot = get_camelot_pro(curr_key)
-                        
-                        st.markdown(f"""
-                            <div class="live-panel">
-                                <span style="color: #00FF41;">📡 SCANNING LIVE AUDIO...</span><br>
-                                > HARMONIC ENGINE: ACTIVE<br>
-                                > STUN SERVER: CONNECTED<br>
-                                > REAL-TIME CONFIDENCE: {curr_conf}%
-                            </div>
-                        """, unsafe_allow_html=True)
-                        
-                        st.metric("CLEF LIVE DÉTECTÉE", camelot, delta=curr_key)
-                except queue.Empty:
-                    # Si la file est vide temporairement, on continue
-                    continue
+                        st.markdown(f"""<div class="live-panel">📡 SCANNING LIVE...<br>> KEY: {curr_key}<br>> CONFIDENCE: {curr_conf}%</div>""", unsafe_allow_html=True)
+                        st.metric("CLEF LIVE", get_camelot_pro(curr_key), delta=curr_key)
+                except queue.Empty: continue
         else:
-            st.info("💡 Cliquez sur **START** pour activer le scanner radio via votre micro.")
+            st.info("💡 Cliquez sur START pour le direct.")
 
-# --- HISTORIQUE ---
-if st.session_state.history:
-    with st.expander("🕒 Dernières Analyses"):
-        st.table(pd.DataFrame(st.session_state.history))
+# --- ONGLET 3 : HISTORIQUE (NOUVEAU) ---
+with tabs[2]:
+    st.markdown("### 🕒 Historique des Sessions")
+    if st.session_state.history:
+        df_history = pd.DataFrame(st.session_state.history)
+        st.dataframe(df_history, use_container_width=True)
+        if st.button("🗑️ Effacer l'historique"):
+            st.session_state.history = []
+            st.rerun()
+    else:
+        st.write("Aucune analyse dans l'historique pour le moment.")
