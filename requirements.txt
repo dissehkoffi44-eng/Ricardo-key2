@@ -5,3 +5,4 @@ pandas>=2.0.0
 plotly>=5.15.0
 soundfile>=0.12.1
 resampy>=0.4.2
+streamlit-webrtc
