@@ -5,38 +5,105 @@ import pandas as pd
 from collections import Counter
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="RICARDO_DJ228 | Dark Edition", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="RICARDO_DJ228 | Pro Analyzer", page_icon="🎧", layout="wide")
 
-# Initialisation de l'historique dans la session
+# Initialisation de l'historique
 if 'history' not in st.session_state:
     st.session_state.history = []
 
-# --- CSS PERSONNALISÉ (MODE NUIT SOFT) ---
+# --- CSS OPTIMISÉ POUR LA LISIBILITÉ ---
 st.markdown("""
     <style>
-    .stApp { background-color: #121212; }
-    h1, h2, h3 { font-family: 'Inter', sans-serif; color: #E0E0E0; text-align: center; }
-    
-    div[data-testid="stMetric"] {
-        background-color: #1E1E1E;
-        border: 1px solid #333333;
-        border-left: 5px solid #BB86FC;
-        border-radius: 12px;
-        padding: 20px;
+    /* Importation d'une police ultra-lisible */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+
+    .stApp { 
+        background-color: #0F0F0F; 
+        font-family: 'Inter', sans-serif;
     }
     
-    /* Style de l'historique */
-    .history-card {
-        background-color: #1E1E1E;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #333333;
-        margin-bottom: 10px;
+    /* Titre Principal */
+    h1 { 
+        color: #FFFFFF; 
+        font-weight: 900; 
+        letter-spacing: -1px;
+        font-size: 3rem !important;
+        margin-bottom: 0px;
+    }
+    
+    /* Sous-titre */
+    .sub-text {
+        color: #BB86FC;
+        text-align: center;
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+        font-weight: 400;
+        opacity: 0.9;
     }
 
-    .stFileUploader { background-color: #1E1E1E; border: 1px dashed #444444; border-radius: 15px; }
-    .stButton>button { background-color: #BB86FC; color: #000000; font-weight: bold; border-radius: 8px; width: 100%; }
-    p, span, label { color: #D1D1D1 !important; }
+    /* Cartes Métriques (Tonalité, BPM) */
+    div[data-testid="stMetric"] {
+        background-color: #1A1A1A;
+        border: 1px solid #2D2D2D;
+        border-radius: 16px;
+        padding: 25px !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    
+    div[data-testid="stMetricLabel"] {
+        color: #A0A0A0 !important;
+        font-size: 1rem !important;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    div[data-testid="stMetricValue"] {
+        color: #FFFFFF !important;
+        font-size: 2.2rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* Style du Tableau d'Historique */
+    .stTable {
+        background-color: #1A1A1A;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    thead tr th {
+        background-color: #252525 !important;
+        color: #BB86FC !important;
+        font-size: 1.1rem !important;
+    }
+
+    /* Texte global */
+    p, li, label, div {
+        color: #E0E0E0 !important;
+        line-height: 1.6;
+    }
+
+    /* Zone d'upload */
+    .stFileUploader section {
+        background-color: #1A1A1A !important;
+        border: 2px dashed #333333 !important;
+        border-radius: 20px !important;
+        padding: 2rem !important;
+    }
+
+    /* Boutons */
+    .stButton>button {
+        background: linear-gradient(90deg, #BB86FC, #9965f4);
+        color: #000000 !important;
+        font-weight: 700;
+        border: none;
+        padding: 0.6rem 2rem;
+        border-radius: 10px;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(187, 134, 252, 0.4);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -69,18 +136,21 @@ def analyze_segment(y_segment, sr):
                 best_score, res_key, res_mode = score, NOTES[i], mode
     return (res_key, res_mode)
 
-# --- INTERFACE PRINCIPALE ---
-st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #BB86FC;'>Analyseur de tonalité & BPM (Mode Nuit)</p>", unsafe_allow_html=True)
+# --- INTERFACE ---
+st.markdown("<h1>RICARDO_DJ228</h1>", unsafe_allow_html=True)
+st.markdown("<p class='sub-text'>Studio-Grade Key & BPM Analyzer</p>", unsafe_allow_html=True)
 
-file = st.file_uploader("Importer un morceau", type=['mp3', 'wav', 'flac'])
+# Centrage de l'uploader
+col_mid, _ = st.columns([2, 1])
+with col_mid:
+    file = st.file_uploader("Glissez votre fichier audio (MP3, WAV, FLAC)", type=['mp3', 'wav', 'flac'])
 
 if file:
-    with st.spinner("Analyse spectrale détaillée..."):
+    with st.spinner("🚀 Analyse spectrale en cours..."):
         y_full, sr = librosa.load(file)
         duration = librosa.get_duration(y=y_full, sr=sr)
         
-        # Analyse par segments de 30s sur le corps du morceau
+        # Analyse 30s sur le corps du morceau
         window_size = 30 
         num_segments = int(duration // window_size)
         segment_results = []
@@ -101,32 +171,31 @@ if file:
         bpm = int(round(float(tempo)))
         camelot = get_camelot(final_key, final_mode)
 
-        # Ajouter à l'historique (éviter les doublons immédiats)
-        entry = {"nom": file.name, "tonalite": f"{final_key} {final_mode.upper()}", "camelot": camelot, "bpm": bpm}
-        if not st.session_state.history or st.session_state.history[0]['nom'] != file.name:
+        # Historique
+        entry = {"Fichier": file.name, "Key": f"{final_key} {final_mode.upper()}", "Camelot": camelot, "BPM": bpm}
+        if not st.session_state.history or st.session_state.history[0]['Fichier'] != file.name:
             st.session_state.history.insert(0, entry)
 
-        # Affichage
+        # Affichage des résultats
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        c1.metric("TONALITÉ", entry["tonalite"])
-        c2.metric("CAMELOT", camelot)
-        c3.metric("TEMPO", f"{bpm} BPM")
+        c1.metric("Tonalité", entry["Key"])
+        c2.metric("Notation Camelot", camelot)
+        c3.metric("Tempo Détecté", f"{bpm} BPM")
 
-        st.divider()
+        st.markdown("<br>", unsafe_allow_html=True)
         st.audio(file)
 
 # --- SECTION HISTORIQUE ---
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("### 🕒 Historique des Analyses")
+st.markdown("<br><hr style='border: 1px solid #2D2D2D;'><br>", unsafe_allow_html=True)
+st.markdown("### 🕒 Dernières Analyses")
 
 if st.session_state.history:
-    # Création d'un tableau pour un affichage propre
     df_history = pd.DataFrame(st.session_state.history)
     st.table(df_history)
     
-    if st.button("Effacer l'historique"):
+    if st.button("🗑️ Effacer l'historique"):
         st.session_state.history = []
         st.rerun()
 else:
-    st.markdown("<p style='text-align: center; color: #555555;'>Aucune analyse pour le moment.</p>", unsafe_allow_html=True)
+    st.info("L'historique apparaîtra ici après votre première analyse.")
