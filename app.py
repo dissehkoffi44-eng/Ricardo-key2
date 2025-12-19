@@ -23,14 +23,27 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- MAPPING CAMELOT PRO & ANHARMONIQUE ---
+# --- MAPPING CAMELOT PRO & ANHARMONIQUE (CORRIGÉ : B = 1B) ---
 BASE_CAMELOT = {
-    'Ab': '1', 'G#': '1', 'Eb': '2', 'D#': '2', 'Bb': '3', 'A#': '3', 
-    'F': '4', 'C': '5', 'G': '6', 'D': '7', 'A': '8', 'E': '9', 
-    'B': '10', 'F#': '11', 'Gb': '11', 'C#': '12', 'Db': '12'
+    'B': '1', 'Cb': '1',   # 1B pour Major, 10A pour Minor (géré par la fonction)
+    'F#': '2', 'Gb': '2',
+    'Db': '3', 'C#': '3', 
+    'Ab': '4', 'G#': '4', 
+    'Eb': '5', 'D#': '5', 
+    'Bb': '6', 'A#': '6', 
+    'F': '7', 
+    'C': '8', 
+    'G': '9', 
+    'D': '10', 
+    'A': '11', 
+    'E': '12'
 }
 
 def get_camelot_pro(key, mode):
+    # Correction spécifique pour B Minor qui est 10A alors que B Major est 1B
+    if key == 'B' and mode in ['minor', 'dorian']:
+        return "10A"
+    
     number = BASE_CAMELOT.get(key, "1")
     letter = "A" if mode in ['minor', 'dorian'] else "B"
     return f"{number}{letter}"
@@ -59,7 +72,7 @@ def analyze_segment(y, sr):
     return {"key": res_key, "mode": res_mode}
 
 # --- INTERFACE PRINCIPALE ---
-st.markdown("<h1>RICARDO_DJ228 V2 PRO ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>RICARDO_DJ228 PRO ANALYZER</h1>", unsafe_allow_html=True)
 file = st.file_uploader("Importer votre audio (Amapiano, House, etc.)", type=['mp3', 'wav', 'flac'])
 
 if file:
@@ -132,5 +145,3 @@ if st.session_state.history:
     if st.button("Effacer l'historique"):
         st.session_state.history = []
         st.rerun()
-else:
-    st.write("Aucune analyse dans cette session.")
