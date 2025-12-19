@@ -4,9 +4,14 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 from collections import Counter
+from datetime import datetime
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Ricardo_DJ228 | Studio Edition", page_icon="🪵", layout="wide")
+
+# Initialisation de l'historique dans la session
+if 'history' not in st.session_state:
+    st.session_state.history = []
 
 # CSS Thème Boisé
 st.markdown("""
@@ -14,6 +19,7 @@ st.markdown("""
     .stApp { background-color: #F9F7F2; }
     h1 { font-family: 'serif'; color: #3D1B6F; text-align: center; }
     div[data-testid="stMetric"] { background-color: #FFFFFF; border-left: 5px solid #5D4037; border-radius: 12px; }
+    .history-card { background-color: #FFFFFF; padding: 10px; border-radius: 8px; border-bottom: 2px solid #D7CCC8; margin-bottom: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -52,7 +58,7 @@ def analyze_segment(y, sr):
                 best_score, res_key, res_mode = score, NOTES[i], mode
     return {"key": res_key, "mode": res_mode}
 
-# --- INTERFACE ---
+# --- INTERFACE PRINCIPALE ---
 st.markdown("<h1>RICARDO_DJ228 PRO ANALYZER</h1>", unsafe_allow_html=True)
 file = st.file_uploader("Importer votre audio (Amapiano, House, etc.)", type=['mp3', 'wav', 'flac'])
 
@@ -68,54 +74,63 @@ if file:
             end_sample = min((start_t + 30) * sr, len(y_full))
             res = analyze_segment(y_full[start_sample:end_sample], sr)
             if res:
-                timeline_data.append({
-                    "Secondes": start_t,
-                    "Note": res['key'],
-                    "Mode": res['mode']
-                })
+                timeline_data.append({"Secondes": start_t, "Note": res['key'], "Mode": res['mode']})
 
         df_tl = pd.DataFrame(timeline_data)
         if not df_tl.empty:
             final_res = df_tl.groupby(['Note', 'Mode']).size().idxmax()
             f_key, f_mode = final_res
+            f_camelot = get_camelot_pro(f_key, f_mode)
             
+            # Sauvegarde dans l'historique
+            analysis_time = datetime.now().strftime("%H:%M:%S")
+            st.session_state.history.insert(0, {
+                "Heure": analysis_time,
+                "Nom": file.name,
+                "Cle": f"{f_key} {f_mode.upper()}",
+                "Camelot": f_camelot,
+                "BPM": int(tempo)
+            })
+
             # --- AFFICHAGE RESULTATS ---
             st.markdown("<br>", unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
             c1.metric("CLÉ DÉTECTÉE", f"{f_key} {f_mode.upper()}")
-            c2.metric("NOTATION CAMELOT", get_camelot_pro(f_key, f_mode))
+            c2.metric("NOTATION CAMELOT", f_camelot)
             c3.metric("TEMPO ESTIMÉ", f"{int(tempo)} BPM")
 
             # --- VERIFICATION A L'OREILLE ---
             st.divider()
             st.subheader("🔊 Vérification auditive")
             v1, v2 = st.columns(2)
-            
             with v1:
-                st.markdown("**Votre morceau :**")
                 st.audio(file)
-            
             with v2:
-                st.markdown(f"**Note de référence ({f_key}) :**")
-                # Fréquences des notes (Octave 3/4 pour test)
                 freqs = {'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88}
                 target_freq = freqs.get(f_key, 440.0)
-                
-                # Génération d'un son sinus riche (fondamentale + harmonique)
-                duration_test = 3.0
-                sr_test = 22050
-                t = np.linspace(0, duration_test, int(sr_test * duration_test), False)
-                # Mix de deux octaves pour une meilleure perception
+                t = np.linspace(0, 3.0, int(22050 * 3.0), False)
                 tone = 0.4 * np.sin(2 * np.pi * target_freq * t) + 0.2 * np.sin(2 * np.pi * (target_freq * 2) * t)
-                
-                st.audio(tone, sample_rate=sr_test)
-                st.caption("Lancez les deux lecteurs en même temps pour vérifier l'harmonie.")
+                st.audio(tone, sample_rate=22050)
 
             # --- TIMELINE ---
             st.divider()
-            st.subheader("📈 Timeline des changements de tonalité")
-            fig = px.line(df_tl, x="Secondes", y="Note", color="Mode", markers=True,
-                          category_orders={"Note": NOTES})
+            st.subheader("📈 Timeline des changements")
+            fig = px.line(df_tl, x="Secondes", y="Note", color="Mode", markers=True, category_orders={"Note": NOTES})
             st.plotly_chart(fig, use_container_width=True)
 
-            st.info(f"💡 **Conseil Ricardo_DJ228 :** Le mode **{f_mode}** a été identifié. Utilisez le code Camelot **{get_camelot_pro(f_key, f_mode)}** pour trier vos bibliothèques.")
+# --- SECTION HISTORIQUE ---
+st.divider()
+st.subheader("📜 Historique des analyses")
+if st.session_state.history:
+    for item in st.session_state.history:
+        st.markdown(f"""
+        <div class="history-card">
+            <strong>{item['Heure']}</strong> | Fichier: <i>{item['Nom']}</i> | 
+            <b>{item['Cle']}</b> ({item['Camelot']}) | {item['BPM']} BPM
+        </div>
+        """, unsafe_allow_html=True)
+    if st.button("Effacer l'historique"):
+        st.session_state.history = []
+        st.rerun()
+else:
+    st.write("Aucune analyse dans cette session.")
