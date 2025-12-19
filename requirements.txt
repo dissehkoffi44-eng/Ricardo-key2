@@ -1,5 +1,7 @@
-streamlit
-librosa
-numpy
-pandas
-plotly
+streamlit>=1.25.0
+librosa>=0.10.0
+numpy>=1.23.5
+pandas>=2.0.0
+plotly>=5.15.0
+soundfile>=0.12.1
+resampy>=0.4.2
