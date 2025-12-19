@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 from collections import Counter
 from datetime import datetime
+import io
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Ricardo_DJ228 | Precision V4.5 Pro", page_icon="🎧", layout="wide")
@@ -28,6 +29,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- MAPPING CAMELOT ---
+# Note : Selon vos préférences enregistrées, F# MINOR = 11A
 BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
 BASE_CAMELOT_MAJOR = {'B':'1B','F#':'2B','Gb':'2B','Db':'3B','C#':'3B','Ab':'4B','G#':'4B','Eb':'5B','D#':'5B','Bb':'6B','A#':'6B','F':'7B','C':'8B','G':'9B','D':'10B','A':'11B','E':'12B'}
 
@@ -58,7 +60,7 @@ def analyze_segment(y, sr):
             best_score, res_key = score, f"{NOTES[i]} minor"
     return res_key, best_score, chroma_avg
 
-@st.cache_data(show_spinner="Analyse spectrale haute précision...")
+@st.cache_data(show_spinner="Analyse spectrale en cours...")
 def get_full_analysis(file_buffer):
     y, sr = librosa.load(file_buffer)
     is_aligned = check_drum_alignment(y, sr)
@@ -72,7 +74,6 @@ def get_full_analysis(file_buffer):
     duration = librosa.get_duration(y=y_final, sr=sr)
     timeline_data, votes, all_chromas = [], [], []
     
-    # Analyse par segments de 10 secondes
     for start_t in range(0, int(duration) - 10, 10):
         y_seg = y_final[int(start_t*sr):int((start_t+10)*sr)]
         key_seg, score_seg, chroma_vec = analyze_segment(y_seg, sr)
@@ -104,72 +105,55 @@ def get_full_analysis(file_buffer):
         "mode": mode_label, "is_aligned": is_aligned
     }
 
-# --- INTERFACE PRINCIPALE ---
+# --- INTERFACE ---
 st.markdown("<h1 style='text-align: center; color: #1A1A1A;'>🎧 RICARDO_DJ228 | V4.5 PRO</h1>", unsafe_allow_html=True)
-
-tabs = st.tabs(["📁 ANALYSE MULTI-FICHIERS", "🕒 HISTORIQUE"])
+tabs = st.tabs(["📁 ANALYSE", "🕒 HISTORIQUE & EXPORT"])
 
 with tabs[0]:
-    files = st.file_uploader("Importer des tracks (MP3, WAV, FLAC)", type=['mp3', 'wav', 'flac'], accept_multiple_files=True)
-    
+    files = st.file_uploader("Importer des tracks", type=['mp3', 'wav', 'flac'], accept_multiple_files=True)
     if files:
         for file in files:
-            with st.expander(f"🎵 Analyse : {file.name}", expanded=(len(files)==1)):
+            with st.expander(f"🎵 {file.name}", expanded=(len(files)==1)):
                 res = get_full_analysis(file)
                 conf = res["confidence"]
                 color = "#10B981" if conf >= 95 else "#F59E0B"
                 
-                # Mise à jour Historique
-                entry = {"Heure": datetime.now().strftime("%H:%M"), "Fichier": file.name, "Key": res['synthese'], "Camelot": get_camelot_pro(res['synthese']), "BPM": res['tempo']}
+                # Historique
+                entry = {"Date": datetime.now().strftime("%d/%m %H:%M"), "Fichier": file.name, "Note": res['synthese'], "Camelot": get_camelot_pro(res['synthese']), "BPM": res['tempo'], "Energie": res['energy']}
                 if not any(h['Fichier'] == file.name for h in st.session_state.history):
                     st.session_state.history.insert(0, entry)
 
-                # Statut Alignement
-                if res["is_aligned"]:
-                    st.markdown(f"""<div class="info-box">✅ <b>Accordage OK :</b> Signal propre (Kick cohérent).</div>""", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""<div class="warning-box">🛡️ <b>Analyse Séparée :</b> Percussions isolées pour isoler l'harmonie.</div>""", unsafe_allow_html=True)
-
-                # Barre de fiabilité
-                st.markdown(f"**Fiabilité de l'analyse : {conf}%**")
+                # UI
+                st.markdown(f"**Confiance : {conf}%**")
                 st.markdown(f"""<div class="reliability-bar-bg"><div class="reliability-fill" style="width: {conf}%; background-color: {color};">{conf}%</div></div>""", unsafe_allow_html=True)
                 
-                # Métriques Clés
                 c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.markdown(f"""<div class="metric-container"><div class="label-custom">VOTE DOMINANT</div><div class="value-custom">{res['vote']}</div><div style="color: {color}; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['vote'])}</div></div>""", unsafe_allow_html=True)
-                with c2:
-                    st.markdown(f"""<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE FINALE</div><div class="value-custom">{res['synthese']}</div><div style="color: #6366F1; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['synthese'])}</div></div>""", unsafe_allow_html=True)
-                with c3:
-                    st.markdown(f"""<div class="metric-container"><div class="label-custom">TEMPO & ÉNERGIE</div><div class="value-custom">{res['tempo']} BPM</div><div style="color: #6366F1; font-weight: 800; font-size: 1.2em;">ENERGY: {res['energy']}/10</div></div>""", unsafe_allow_html=True)
+                with c1: st.markdown(f"""<div class="metric-container"><div class="label-custom">DOMINANTE</div><div class="value-custom">{res['vote']}</div><div style="color: {color}; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['vote'])}</div></div>""", unsafe_allow_html=True)
+                with c2: st.markdown(f"""<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE</div><div class="value-custom">{res['synthese']}</div><div style="color: #6366F1; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['synthese'])}</div></div>""", unsafe_allow_html=True)
+                with c3: st.markdown(f"""<div class="metric-container"><div class="label-custom">TEMPO</div><div class="value-custom">{res['tempo']} BPM</div><div style="color: #6366F1; font-weight: 800; font-size: 1.2em;">E: {res['energy']}/10</div></div>""", unsafe_allow_html=True)
 
-                # --- GRAPHIQUE PLOTLY (TIMELINE) ---
-                st.markdown("### 📈 Évolution Harmonique")
+                # Graphique
+                st.markdown("### 📈 Timeline Harmonique")
                 df_timeline = pd.DataFrame(res['timeline'])
-                
-                # Tri musical pour l'axe Y
                 note_order = ['C minor', 'C# minor', 'D minor', 'D# minor', 'E minor', 'F minor', 'F# minor', 'G minor', 'G# minor', 'A minor', 'A# minor', 'B minor']
-                
-                fig = px.scatter(
-                    df_timeline, 
-                    x="Temps", 
-                    y="Note", 
-                    color="Confiance",
-                    size="Confiance",
-                    color_continuous_scale='Viridis',
-                    category_orders={"Note": note_order},
-                    labels={"Temps": "Secondes", "Note": "Tonalité"},
-                    template="plotly_white"
-                )
-                
-                fig.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0))
+                fig = px.scatter(df_timeline, x="Temps", y="Note", color="Confiance", size="Confiance", color_continuous_scale='Viridis', category_orders={"Note": note_order}, template="plotly_white")
+                fig.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
                 st.plotly_chart(fig, use_container_width=True)
 
 with tabs[1]:
     if st.session_state.history:
-        st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True)
-        if st.button("🗑️ Effacer l'historique"):
-            st.session_state.history = []
-            st.rerun()
+        df_hist = pd.DataFrame(st.session_state.history)
+        st.dataframe(df_hist, use_container_width=True)
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            # Export CSV
+            csv = df_hist.to_csv(index=False).encode('utf-8')
+            st.download_button(label="📥 Télécharger l'historique (CSV)", data=csv, file_name=f"Ricardo_DJ_Export_{datetime.now().strftime('%Y%m%d')}.csv", mime='text/csv')
+        
+        with col_btn2:
+            if st.button("🗑️ Effacer tout"):
+                st.session_state.history = []
+                st.rerun()
     else:
-        st.info("Aucune analyse enregistrée dans cette session.")
+        st.info("L'historique est vide.")
