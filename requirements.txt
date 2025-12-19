@@ -2,4 +2,4 @@ streamlit
 librosa
 numpy
 pandas
-soundfile
+plotly
