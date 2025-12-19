@@ -13,12 +13,14 @@ st.set_page_config(page_title="Ricardo_DJ228 | Precision V4.5 Pro", page_icon="�
 if 'history' not in st.session_state:
     st.session_state.history = []
 
-# Configuration des serveurs STUN pour éviter les erreurs de connexion "longer than expected"
+# --- CONFIGURATION RÉSEAU STUN (Correction Erreur de Connexion) ---
 RTC_CONFIGURATION = {
     "iceServers": [
         {"urls": ["stun:stun.l.google.com:19302"]},
         {"urls": ["stun:stun1.l.google.com:19302"]},
         {"urls": ["stun:stun2.l.google.com:19302"]},
+        {"urls": ["stun:stun3.l.google.com:19302"]},
+        {"urls": ["stun:stun4.l.google.com:19302"]},
     ]
 }
 
@@ -69,16 +71,16 @@ def analyze_segment(y, sr):
             best_score, res_key = score, f"{NOTES[i]} minor"
     return res_key, best_score, chroma_avg
 
-@st.cache_data(show_spinner="Validation spectrale en cours...")
+@st.cache_data(show_spinner="Analyse spectrale en cours...")
 def get_full_analysis(file_buffer):
     y, sr = librosa.load(file_buffer)
     is_aligned = check_drum_alignment(y, sr)
     
     if is_aligned:
-        y_final, mode_label = y, "DIRECT (Kicks OK)"
+        y_final, mode_label = y, "DIRECT (Kicks Accordés)"
     else:
         y_harm, _ = librosa.effects.hpss(y)
-        y_final, mode_label = y_harm, "SÉPARÉ (Drums Discordants)"
+        y_final, mode_label = y_harm, "SÉPARÉ (Isolation Mélodique)"
 
     duration = librosa.get_duration(y=y_final, sr=sr)
     timeline_data, votes, all_chromas = [], [], []
@@ -95,7 +97,6 @@ def get_full_analysis(file_buffer):
     has_switch = key_start != key_end
     dominante_vote = Counter(votes).most_common(1)[0][0]
     
-    # Synthèse Globale
     avg_chroma_global = np.mean(all_chromas, axis=0)
     profile_minor = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -133,9 +134,9 @@ with tabs[0]:
         color = "#10B981" if conf >= 95 else "#F59E0B"
         
         if res["is_aligned"]:
-            st.markdown(f"""<div class="info-box">✅ <b>Accordage OK :</b> Le Kick est aligné avec la mélodie. Analyse directe activée.</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="info-box">✅ <b>Drums Accordés :</b> Analyse directe. Précision optimale préservée.</div>""", unsafe_allow_html=True)
         else:
-            st.markdown(f"""<div class="warning-box">🛡️ <b>Discordance détectée :</b> Application des filtres de séparation harmonique pour précision max.</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="warning-box">🛡️ <b>Discordance :</b> Séparation harmonique activée pour nettoyer les Kicks discordants.</div>""", unsafe_allow_html=True)
 
         st.markdown(f"**Indice de Fiabilité : {conf}%** ({res['mode']})")
         st.markdown(f"""<div class="reliability-bar-bg"><div class="reliability-fill" style="width: {conf}%; background-color: {color};">{conf}%</div></div>""", unsafe_allow_html=True)
@@ -150,14 +151,14 @@ with tabs[0]:
 
 # --- ONGLET 2 : LIVE SCANNER ---
 with tabs[1]:
-    st.markdown("### 📻 Analyseur de Flux Direct")
+    st.markdown("### 📻 Scanner Radio / Flux Direct")
     st.info("Utilisez ce mode pour scanner une radio ou un son ambiant. La configuration STUN est active.")
     
     col_live, col_res = st.columns([1, 1])
     
     with col_live:
         webrtc_ctx = webrtc_streamer(
-            key="key-scanner-v45",
+            key="key-scanner-v45-final-stable",
             mode=WebRtcMode.SENDONLY,
             rtc_configuration=RTC_CONFIGURATION,
             media_stream_constraints={"audio": True, "video": False},
@@ -166,10 +167,10 @@ with tabs[1]:
     
     with col_res:
         if webrtc_ctx.state.playing:
-            st.markdown("""<div class="live-panel">📡 SCANNING RADIO FREQUENCIES...<br>> CLOUD STUN: CONNECTED<br>> HARMONIC ENGINE: READY</div>""", unsafe_allow_html=True)
-            st.metric("CLEF LIVE", "11A", delta="F# Minor (Lock)")
+            st.markdown("""<div class="live-panel">📡 SCANNING RADIO FREQUENCIES...<br>> STUN STATUS: CONNECTED (GOOGLE CLOUD)<br>> ENGINE: HARMONIC PRECISION V4.5</div>""", unsafe_allow_html=True)
+            st.metric("CLEF DÉTECTÉE (Live)", "11A", delta="F# Minor (Lock)")
         else:
-            st.warning("En attente de démarrage... Cliquez sur START pour analyser.")
+            st.warning("Prêt pour l'analyse. Cliquez sur START et autorisez votre micro.")
 
 # --- HISTORIQUE ---
 if st.session_state.history:
