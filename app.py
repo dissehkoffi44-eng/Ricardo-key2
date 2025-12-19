@@ -23,6 +23,7 @@ st.markdown("""
     .value-custom { font-size: 1.6em; font-weight: 800; color: #1A1A1A; }
     .reliability-bar-bg { background-color: #E0E0E0; border-radius: 10px; height: 18px; width: 100%; margin: 10px 0; overflow: hidden; }
     .reliability-fill { height: 100%; transition: width 0.8s ease-in-out; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8em; font-weight: bold; }
+    .status-badge { font-size: 0.8em; padding: 2px 8px; border-radius: 10px; font-weight: bold; margin-top: 5px; display: inline-block; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,9 +43,11 @@ def get_camelot_pro(key_mode_str):
 
 # --- MOTEUR ANALYSE ---
 def check_drum_alignment(y, sr):
+    """Analyse intelligente : vérifie si les kicks sont alignés spectralement à la mélodie"""
     flatness = np.mean(librosa.feature.spectral_flatness(y=y))
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
     chroma_max_mean = np.mean(np.max(chroma, axis=0))
+    # Un score de platitude bas et un chroma fort indiquent un kick accordé ou discret
     return flatness < 0.045 or chroma_max_mean > 0.75
 
 def analyze_segment(y, sr):
@@ -67,22 +70,28 @@ def analyze_segment(y, sr):
                 best_score, res_key = score, f"{NOTES[i]} {mode}"
     return res_key, best_score, chroma_avg
 
-@st.cache_data(show_spinner="Analyse spectrale hybride...")
+@st.cache_data(show_spinner="Analyse intelligente et séparation spectrale...")
 def get_full_analysis(file_buffer):
     y, sr = librosa.load(file_buffer)
+    
+    # --- ANALYSE INTELLIGENTE DES KICKS ---
     is_aligned = check_drum_alignment(y, sr)
     
-    # Nettoyage selon le type de track
     if is_aligned:
+        # Kicks accordés : On garde le signal total pour plus de corps
         y_final = y
+        mode_label = "DIRECT (Kicks OK)"
+        mode_color = "#E8F5E9"
     else:
+        # Kicks polluants : On sépare la mélodie pour la précision
         y_harm, _ = librosa.effects.hpss(y)
         y_final = y_harm
+        mode_label = "SÉPARÉ (Isolation Mélodie)"
+        mode_color = "#E3F2FD"
 
     duration = librosa.get_duration(y=y_final, sr=sr)
     timeline_data, votes, all_chromas = [], [], []
     
-    # Analyse par segments
     for start_t in range(0, int(duration) - 10, 10):
         y_seg = y_final[int(start_t*sr):int((start_t+10)*sr)]
         key_seg, score_seg, chroma_vec = analyze_segment(y_seg, sr)
@@ -92,38 +101,36 @@ def get_full_analysis(file_buffer):
     
     dominante_vote = Counter(votes).most_common(1)[0][0]
     
-    # Synthèse globale
     avg_chroma_global = np.mean(all_chromas, axis=0)
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-    PROFILES = {
+    PROFILES_SYNTH = {
         "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
         "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
     }
     
     best_synth_score, tonique_synth = -1, ""
-    for mode, profile in PROFILES.items():
+    for mode, profile in PROFILES_SYNTH.items():
         for i in range(12):
             score = np.corrcoef(avg_chroma_global, np.roll(profile, i))[0, 1]
             if score > best_synth_score:
                 best_synth_score, tonique_synth = score, f"{NOTES[i]} {mode}"
 
-    # Calcul stabilité
     stability = Counter(votes).most_common(1)[0][1] / len(votes)
     base_conf = ((stability * 0.5) + (best_synth_score * 0.5)) * 100
     final_confidence = int(max(96, min(99, base_conf + 15))) if dominante_vote == tonique_synth else int(min(89, base_conf))
     
-    # Tempo et Énergie
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
     energy = int(np.clip(np.mean(librosa.feature.rms(y=y))*35 + (float(tempo)/160), 1, 10))
 
     return {
         "vote": dominante_vote, "synthese": tonique_synth, "confidence": final_confidence,
-        "tempo": int(float(tempo)), "energy": energy, "timeline": timeline_data
+        "tempo": int(float(tempo)), "energy": energy, "timeline": timeline_data,
+        "mode_label": mode_label, "mode_color": mode_color
     }
 
 # --- INTERFACE ---
 st.markdown("<h1 style='text-align: center; color: #1A1A1A;'>🎧 RICARDO_DJ228 | V4.5 PRO HYBRID</h1>", unsafe_allow_html=True)
-tabs = st.tabs(["📁 ANALYSE MULTI-MODES", "🕒 HISTORIQUE"])
+tabs = st.tabs(["📁 ANALYSEUR INTELLIGENT", "🕒 HISTORIQUE"])
 
 with tabs[0]:
     files = st.file_uploader("Importer des tracks", type=['mp3', 'wav', 'flac'], accept_multiple_files=True)
@@ -139,6 +146,9 @@ with tabs[0]:
                 if not any(h['Fichier'] == file.name for h in st.session_state.history):
                     st.session_state.history.insert(0, entry)
 
+                # Info Mode Analyse
+                st.markdown(f"""<div class="status-badge" style="background-color: {res['mode_color']}; color: #333; border: 1px solid #CCC;">Moteur : {res['mode_label']}</div>""", unsafe_allow_html=True)
+
                 # UI Confiance
                 st.markdown(f"**Indice de Précision : {conf}%**")
                 st.markdown(f"""<div class="reliability-bar-bg"><div class="reliability-fill" style="width: {conf}%; background-color: {color};">{conf}%</div></div>""", unsafe_allow_html=True)
@@ -150,8 +160,8 @@ with tabs[0]:
 
                 # Graphique
                 df_timeline = pd.DataFrame(res['timeline'])
-                fig = px.scatter(df_timeline, x="Temps", y="Note", color="Confiance", size="Confiance", color_continuous_scale='Viridis', template="plotly_white", title="Variation Harmonique Temporelle")
-                fig.update_layout(height=350)
+                fig = px.scatter(df_timeline, x="Temps", y="Note", color="Confiance", size="Confiance", color_continuous_scale='Viridis', template="plotly_white")
+                fig.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0))
                 st.plotly_chart(fig, use_container_width=True)
 
 with tabs[1]:
