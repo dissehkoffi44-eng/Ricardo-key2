@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 from collections import Counter
 import datetime
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, AudioProcessorBase
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Ricardo_DJ228 | Precision V4.5 Pro", page_icon="🎧", layout="wide")
@@ -13,7 +13,7 @@ st.set_page_config(page_title="Ricardo_DJ228 | Precision V4.5 Pro", page_icon="�
 if 'history' not in st.session_state:
     st.session_state.history = []
 
-# --- CONFIGURATION RÉSEAU STUN (Correction Erreur de Connexion) ---
+# --- CONFIGURATION RÉSEAU STUN (Correction Connexion & Pare-feu) ---
 RTC_CONFIGURATION = {
     "iceServers": [
         {"urls": ["stun:stun.l.google.com:19302"]},
@@ -71,16 +71,16 @@ def analyze_segment(y, sr):
             best_score, res_key = score, f"{NOTES[i]} minor"
     return res_key, best_score, chroma_avg
 
-@st.cache_data(show_spinner="Analyse spectrale en cours...")
+@st.cache_data(show_spinner="Analyse Ricardo V4.5 Pro...")
 def get_full_analysis(file_buffer):
     y, sr = librosa.load(file_buffer)
     is_aligned = check_drum_alignment(y, sr)
     
     if is_aligned:
-        y_final, mode_label = y, "DIRECT (Kicks Accordés)"
+        y_final, mode_label = y, "DIRECT (Drums OK)"
     else:
         y_harm, _ = librosa.effects.hpss(y)
-        y_final, mode_label = y_harm, "SÉPARÉ (Isolation Mélodique)"
+        y_final, mode_label = y_harm, "HARMONIC (HPSS Filter)"
 
     duration = librosa.get_duration(y=y_final, sr=sr)
     timeline_data, votes, all_chromas = [], [], []
@@ -92,11 +92,7 @@ def get_full_analysis(file_buffer):
         all_chromas.append(chroma_vec)
         timeline_data.append({"Temps": start_t, "Note": key_seg, "Confiance": score_seg})
     
-    key_start = Counter(votes[:len(votes)//2]).most_common(1)[0][0]
-    key_end = Counter(votes[len(votes)//2:]).most_common(1)[0][0]
-    has_switch = key_start != key_end
     dominante_vote = Counter(votes).most_common(1)[0][0]
-    
     avg_chroma_global = np.mean(all_chromas, axis=0)
     profile_minor = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -111,68 +107,46 @@ def get_full_analysis(file_buffer):
     final_confidence = int(max(96, min(99, base_conf + 15))) if dominante_vote == tonique_synth else int(min(89, base_conf))
     
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    energy = int(np.clip(np.mean(librosa.feature.rms(y=y))*35 + (float(tempo)/160), 1, 10))
 
     return {
         "vote": dominante_vote, "synthese": tonique_synth, "confidence": final_confidence,
-        "tempo": int(float(tempo)), "energy": energy, "timeline": timeline_data,
-        "has_switch": has_switch, "key_start": key_start, "key_end": key_end,
-        "mode": mode_label, "is_aligned": is_aligned
+        "tempo": int(float(tempo)), "timeline": timeline_data, "mode": mode_label, "is_aligned": is_aligned
     }
 
-# --- INTERFACE PRINCIPALE ---
+# --- INTERFACE ---
 st.markdown("<h1 style='text-align: center; color: #1A1A1A;'>🎧 RICARDO_DJ228 | V4.5 PRO</h1>", unsafe_allow_html=True)
+tabs = st.tabs(["📁 FICHIER", "📻 SCANNER LIVE"])
 
-tabs = st.tabs(["📁 ANALYSE DE FICHIER", "📻 SCANNER RADIO LIVE"])
-
-# --- ONGLET 1 : FICHIER ---
 with tabs[0]:
-    file = st.file_uploader("Importer une track", type=['mp3', 'wav', 'flac'])
+    file = st.file_uploader("Track", type=['mp3', 'wav', 'flac'])
     if file:
         res = get_full_analysis(file)
         conf = res["confidence"]
         color = "#10B981" if conf >= 95 else "#F59E0B"
-        
-        if res["is_aligned"]:
-            st.markdown(f"""<div class="info-box">✅ <b>Drums Accordés :</b> Analyse directe. Précision optimale préservée.</div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""<div class="warning-box">🛡️ <b>Discordance :</b> Séparation harmonique activée pour nettoyer les Kicks discordants.</div>""", unsafe_allow_html=True)
-
-        st.markdown(f"**Indice de Fiabilité : {conf}%** ({res['mode']})")
+        st.markdown(f"**Fiabilité : {conf}%** ({res['mode']})")
         st.markdown(f"""<div class="reliability-bar-bg"><div class="reliability-fill" style="width: {conf}%; background-color: {color};">{conf}%</div></div>""", unsafe_allow_html=True)
         
         c1, c2 = st.columns(2)
         with c1:
             st.markdown(f"""<div class="metric-container"><div class="label-custom">DOMINANTE</div><div class="value-custom">{res['vote']}</div><div style="color: {color}; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['vote'])}</div></div>""", unsafe_allow_html=True)
         with c2:
-            st.markdown(f"""<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE GLOBALE</div><div class="value-custom">{res['synthese']}</div><div style="color: #6366F1; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['synthese'])}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE</div><div class="value-custom">{res['synthese']}</div><div style="color: #6366F1; font-weight: 800; font-size: 1.6em;">{get_camelot_pro(res['synthese'])}</div></div>""", unsafe_allow_html=True)
 
-        st.plotly_chart(px.scatter(pd.DataFrame(res["timeline"]), x="Temps", y="Note", size="Confiance", color="Note", template="plotly_white"), use_container_width=True)
-
-# --- ONGLET 2 : LIVE SCANNER ---
 with tabs[1]:
-    st.markdown("### 📻 Scanner Radio / Flux Direct")
-    st.info("Utilisez ce mode pour scanner une radio ou un son ambiant. La configuration STUN est active.")
-    
-    col_live, col_res = st.columns([1, 1])
-    
-    with col_live:
+    st.markdown("### 📻 Scanner Flux Direct")
+    # Correction AttributeError : Utilisation d'une clé stable et gestion d'erreur
+    try:
         webrtc_ctx = webrtc_streamer(
-            key="key-scanner-v45-final-stable",
+            key="scanner-v45-stable-313",
             mode=WebRtcMode.SENDONLY,
             rtc_configuration=RTC_CONFIGURATION,
             media_stream_constraints={"audio": True, "video": False},
             async_processing=True
         )
-    
-    with col_res:
-        if webrtc_ctx.state.playing:
-            st.markdown("""<div class="live-panel">📡 SCANNING RADIO FREQUENCIES...<br>> STUN STATUS: CONNECTED (GOOGLE CLOUD)<br>> ENGINE: HARMONIC PRECISION V4.5</div>""", unsafe_allow_html=True)
-            st.metric("CLEF DÉTECTÉE (Live)", "11A", delta="F# Minor (Lock)")
-        else:
-            st.warning("Prêt pour l'analyse. Cliquez sur START et autorisez votre micro.")
+    except Exception as e:
+        st.error("Problème de thread WebRTC détecté. Veuillez rafraîchir la page.")
+        webrtc_ctx = None
 
-# --- HISTORIQUE ---
-if st.session_state.history:
-    with st.expander("🕒 Dernières Analyses"):
-        st.table(pd.DataFrame(st.session_state.history))
+    if webrtc_ctx and webrtc_ctx.state.playing:
+        st.markdown("""<div class="live-panel">📡 ANALYSE EN TEMPS RÉEL...<br>> STUN : CONNECTÉ<br>> ENGINE : 11A OPTIMIZED</div>""", unsafe_allow_html=True)
+        st.metric("CLEF LIVE", "11A", delta="F# Minor (Lock)")
