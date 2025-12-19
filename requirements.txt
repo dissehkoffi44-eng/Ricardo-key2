@@ -4,5 +4,5 @@ numpy
 pandas
 plotly
 streamlit-webrtc
-# Requis pour librosa sur certains serveurs
 soundfile
+resampy
