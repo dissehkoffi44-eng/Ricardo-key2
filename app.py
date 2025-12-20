@@ -109,7 +109,7 @@ def check_drum_alignment(y, sr):
 def analyze_segment(y, sr):
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     tuning = librosa.estimate_tuning(y=y, sr=sr)
-    # AJOUT : Augmentation de la résolution (24 bins) pour capturer les micro-écarts
+    # AJOUT : Résolution HD 24 bins pour une précision de détection accrue
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr, tuning=tuning, bins_per_octave=24)
     chroma_avg = np.mean(chroma, axis=1)
     
@@ -125,7 +125,7 @@ def analyze_segment(y, sr):
         for i in range(12):
             score = np.corrcoef(chroma_avg, np.roll(profile, i))[0, 1]
             
-            # AJOUT : Test de validation de la Tierce (Tranchant Majeur vs Mineur)
+            # AJOUT : Validation logique de la Tierce pour trancher Majeur vs Mineur
             actual_rolled = np.roll(chroma_avg, -i)
             if mode == "major" and actual_rolled[4] < actual_rolled[3]: score -= 0.05
             if mode == "minor" and actual_rolled[3] < actual_rolled[4]: score -= 0.05
@@ -165,7 +165,6 @@ def get_full_analysis(file_buffer):
     key_shift_detected = True if len(top_votes) > 1 and (top_votes[1][1] / len(votes)) > 0.25 else False
 
     stability = Counter(votes).most_common(1)[0][1] / len(votes)
-    # Ajustement de la confiance pour refléter la précision accrue
     final_conf = int(max(97, min(99, ((stability*0.5)+(best_synth_score*0.5))*100 + 10))) if dominante_vote == tonique_synth else 91
     
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
@@ -201,7 +200,14 @@ with tabs[0]:
                 with c2: 
                     st.markdown(f'<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE</div><div class="value-custom">{res["synthese"]}</div><div>{cam_final}</div></div>', unsafe_allow_html=True)
                     get_sine_witness(res["synthese"], "synth")
-                    st.download_button(label="💾 EXPORT TAGGED MP3", data=get_tagged_audio(file, cam_final), file_name=f"[{cam_final}] {file.name}", mime="audio/mpeg")
+                    # FIX : Ajout d'une 'key' unique pour éviter l'erreur DuplicateElementId
+                    st.download_button(
+                        label="💾 EXPORT TAGGED MP3", 
+                        data=get_tagged_audio(file, cam_final), 
+                        file_name=f"[{cam_final}] {file.name}", 
+                        mime="audio/mpeg",
+                        key=f"dl_btn_{file.name}"
+                    )
                 
                 # --- PODIUM TOP CONFIANCE ---
                 df_timeline = pd.DataFrame(res['timeline'])
@@ -212,8 +218,8 @@ with tabs[0]:
                 with c3:
                     st.markdown(f'<div class="metric-container" style="border-bottom: 4px solid #F1C40F;"><div class="label-custom">TOP CONFIANCE</div><div style="font-size:0.85em; margin-top:5px;">🥇 {best_n} <b>({get_camelot_pro(best_n)})</b></div><div style="font-size:0.85em;">🥈 {sec_n} <b>({get_camelot_pro(sec_n)})</b></div></div>', unsafe_allow_html=True)
                     col_t1, col_t2 = st.columns(2)
-                    with col_t1: get_sine_witness(best_n, "best")
-                    with col_t2: get_sine_witness(sec_n, "sec")
+                    with col_t1: get_sine_witness(best_n, f"best_{file.name}")
+                    with col_t2: get_sine_witness(sec_n, f"sec_{file.name}")
                 
                 with c4: 
                     st.markdown(f'<div class="metric-container"><div class="label-custom">BPM & ENERGIE</div><div class="value-custom">{res["tempo"]}</div><div>E: {res["energy"]}/10</div></div>', unsafe_allow_html=True)
